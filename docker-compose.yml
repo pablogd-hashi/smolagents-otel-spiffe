@@ -1,0 +1,213 @@
+# Full stack: identity (Vault), mesh (Consul + Envoy sidecars), observability
+# (OTel Collector, Jaeger, Prometheus, Loki, Grafana), and the two agents.
+#
+# Sidecars are wired only on the agents — that is enough to demonstrate mesh
+# behaviour without making every infra container run a proxy. In a real
+# deployment every Connect-enabled service would have one.
+
+x-common-env: &common-env
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4317
+  LLM_MODEL: ${LLM_MODEL:-gpt-4o-mini}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+  AGENT_MAX_STEPS: ${AGENT_MAX_STEPS:-8}
+  AGENT_PLANNING_INTERVAL: ${AGENT_PLANNING_INTERVAL:-3}
+  DEPLOY_ENV: ${DEPLOY_ENV:-local}
+
+services:
+
+  # --- Identity & Mesh -----------------------------------------------------
+
+  vault:
+    image: hashicorp/vault:1.18
+    container_name: vault
+    cap_add: [IPC_LOCK]
+    environment:
+      VAULT_DEV_ROOT_TOKEN_ID: ${VAULT_DEV_ROOT_TOKEN_ID:-root}
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      VAULT_ADDR: http://0.0.0.0:8200
+    ports: ["8200:8200"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:8200/v1/sys/health?standbyok=true"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [mesh]
+
+  consul:
+    image: hashicorp/consul:1.20
+    container_name: consul
+    command: ["agent", "-config-file=/etc/consul.d/config.hcl"]
+    volumes:
+      - ./consul/config.hcl:/etc/consul.d/config.hcl:ro
+      - consul-data:/consul/data
+    ports:
+      - "8500:8500"   # UI / HTTP API
+      - "8502:8502"   # gRPC for sidecars
+      - "8600:8600/udp"
+    healthcheck:
+      test: ["CMD", "consul", "members"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      vault: { condition: service_healthy }
+    networks: [mesh]
+
+  # --- Observability backends ----------------------------------------------
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.116.1
+    container_name: otel-collector
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector/config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # internal metrics
+      - "13133:13133" # health
+    depends_on:
+      jaeger:     { condition: service_started }
+      prometheus: { condition: service_started }
+      loki:       { condition: service_started }
+    networks: [mesh]
+
+  jaeger:
+    image: jaegertracing/jaeger:2.1.0
+    container_name: jaeger
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "16686:16686" # UI
+      - "4327:4317"   # OTLP gRPC (remapped — collector talks on internal 4317)
+    networks: [mesh]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:16686"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-remote-write-receiver
+      - --enable-feature=otlp-write-receiver
+      - --enable-feature=native-histograms
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports: ["9090:9090"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:9090/-/healthy"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [mesh]
+
+  loki:
+    image: grafana/loki:3.3.2
+    container_name: loki
+    command: ["-config.file=/etc/loki/loki-config.yaml"]
+    volumes:
+      - ./loki/loki-config.yaml:/etc/loki/loki-config.yaml:ro
+      - loki-data:/loki
+    ports: ["3100:3100"]
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O-", "http://127.0.0.1:3100/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [mesh]
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports: ["3000:3000"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O- http://127.0.0.1:3000/api/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    depends_on:
+      prometheus: { condition: service_healthy }
+      loki:       { condition: service_healthy }
+    networks: [mesh]
+
+  # --- Agents --------------------------------------------------------------
+
+  executor:
+    build:
+      context: .
+      dockerfile: agents/executor/Dockerfile
+    container_name: executor
+    environment:
+      <<: *common-env
+    ports: ["8001:8000"]
+    depends_on:
+      otel-collector: { condition: service_started }
+    networks: [mesh]
+
+  planner:
+    build:
+      context: .
+      dockerfile: agents/planner/Dockerfile
+    container_name: planner
+    environment:
+      <<: *common-env
+      EXECUTOR_URL: http://executor:8000
+    ports: ["8000:8000"]
+    depends_on:
+      executor:       { condition: service_healthy }
+      otel-collector: { condition: service_started }
+    networks: [mesh]
+
+  # --- Envoy sidecars -------------------------------------------------------
+  # Connect-injected sidecar proxies for the two agents. Their /stats/prometheus
+  # endpoint is what the mesh-health dashboard scrapes. Bootstrap config is
+  # generated by `bin/register-services.sh` after Consul is up.
+
+  planner-sidecar:
+    image: envoyproxy/envoy:v1.31.0
+    container_name: planner-sidecar
+    command: ["-c", "/etc/envoy/planner-bootstrap.yaml", "--service-cluster", "planner-agent", "--service-node", "planner-agent-1"]
+    volumes:
+      - ./consul/sidecars:/etc/envoy:ro
+    network_mode: "service:planner"
+    depends_on:
+      planner: { condition: service_healthy }
+      consul:  { condition: service_healthy }
+
+  executor-sidecar:
+    image: envoyproxy/envoy:v1.31.0
+    container_name: executor-sidecar
+    command: ["-c", "/etc/envoy/executor-bootstrap.yaml", "--service-cluster", "executor-agent", "--service-node", "executor-agent-1"]
+    volumes:
+      - ./consul/sidecars:/etc/envoy:ro
+    network_mode: "service:executor"
+    depends_on:
+      executor: { condition: service_healthy }
+      consul:   { condition: service_healthy }
+
+networks:
+  mesh:
+    driver: bridge
+
+volumes:
+  consul-data:
+  prometheus-data:
+  loki-data:
+  grafana-data:

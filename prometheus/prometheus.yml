@@ -1,0 +1,33 @@
+# Prometheus accepts metrics from the OTel Collector via remote write and
+# scrapes the mesh sidecars and Consul directly. The collector pushes; the
+# Envoy sidecars and Consul are pulled.
+
+global:
+  scrape_interval:     15s
+  evaluation_interval: 15s
+
+# Required for the OTel Collector's prometheusremotewrite exporter to land
+# data here. Prometheus needs --web.enable-remote-write-receiver passed at
+# startup (set in docker-compose.yml).
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: otel-collector
+    static_configs:
+      - targets: ['otel-collector:8888']
+
+  # Envoy sidecar metrics. The sidecars use network_mode: "service:planner/executor"
+  # so they share their agent's network namespace — they're reachable via the agent
+  # hostname, not their own. The prometheus listener runs on 19001 (separate from
+  # the admin on 19000) and exposes /metrics which proxies to admin /stats/prometheus.
+  - job_name: envoy-sidecars
+    metrics_path: /metrics
+    static_configs:
+      - targets:
+          - 'planner:19001'
+          - 'executor:19001'
+        labels:
+          mesh: consul

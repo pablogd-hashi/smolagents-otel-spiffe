@@ -1,0 +1,96 @@
+{
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": null,
+  "uid": "smolagents-mesh-health",
+  "title": "Consul Mesh Health",
+  "tags": ["smolagents", "consul", "mesh", "envoy"],
+  "timezone": "",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-30m", "to": "now" },
+  "timepicker": {},
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": { "type": "grafana", "uid": "-- Grafana --" },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "templating": { "list": [] },
+  "panels": [
+    { "type": "row", "id": 1, "title": "Connection Health", "collapsed": false, "gridPos": { "x": 0, "y": 0, "w": 24, "h": 1 } },
+
+    {
+      "id": 2, "type": "timeseries", "title": "Active Upstream Connections (per service pair)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 1, "w": 12, "h": 8 },
+      "targets": [ { "refId": "A", "expr": "sum by (envoy_cluster_name) (envoy_cluster_upstream_cx_active)", "legendFormat": "{{envoy_cluster_name}}" } ],
+      "fieldConfig": { "defaults": { "unit": "short", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
+    },
+    {
+      "id": 3, "type": "timeseries", "title": "Upstream Connection Errors (rate)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 1, "w": 12, "h": 8 },
+      "targets": [ { "refId": "A", "expr": "sum by (envoy_cluster_name) (rate(envoy_cluster_upstream_cx_connect_fail[5m]))", "legendFormat": "{{envoy_cluster_name}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "bars", "fillOpacity": 60 } }, "overrides": [] },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
+    },
+
+    { "type": "row", "id": 10, "title": "mTLS", "collapsed": false, "gridPos": { "x": 0, "y": 9, "w": 24, "h": 1 } },
+
+    {
+      "id": 11, "type": "timeseries", "title": "TLS Handshake Rate",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 10, "w": 12, "h": 8 },
+      "targets": [ { "refId": "A", "expr": "sum by (envoy_cluster_name) (rate(envoy_cluster_ssl_handshake[5m]))", "legendFormat": "{{envoy_cluster_name}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 10 } }, "overrides": [] },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
+    },
+    {
+      "id": 12, "type": "timeseries", "title": "TLS Handshake Errors",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 12, "y": 10, "w": 12, "h": 8 },
+      "targets": [ { "refId": "A", "expr": "sum by (envoy_cluster_name) (rate(envoy_cluster_ssl_connection_error[5m]))", "legendFormat": "{{envoy_cluster_name}}" } ],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "bars", "fillOpacity": 60 }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.001 } ] } }, "overrides": [] },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
+    },
+
+    { "type": "row", "id": 20, "title": "Latency", "collapsed": false, "gridPos": { "x": 0, "y": 18, "w": 24, "h": 1 } },
+
+    {
+      "id": 21, "type": "timeseries", "title": "Upstream Response P99 (per cluster)",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 19, "w": 24, "h": 8 },
+      "targets": [
+        { "refId": "P99", "expr": "histogram_quantile(0.99, sum by (le, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_time_bucket[5m])))", "legendFormat": "p99 {{envoy_cluster_name}}" },
+        { "refId": "P50", "expr": "histogram_quantile(0.50, sum by (le, envoy_cluster_name) (rate(envoy_cluster_upstream_rq_time_bucket[5m])))", "legendFormat": "p50 {{envoy_cluster_name}}" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ms", "custom": { "drawStyle": "line", "fillOpacity": 5 } }, "overrides": [] },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
+    },
+
+    { "type": "row", "id": 30, "title": "Intentions", "collapsed": false, "gridPos": { "x": 0, "y": 27, "w": 24, "h": 1 } },
+
+    {
+      "id": 31, "type": "timeseries", "title": "Allowed vs Denied Connection Attempts",
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "x": 0, "y": 28, "w": 24, "h": 8 },
+      "targets": [
+        { "refId": "A", "expr": "sum(rate(envoy_cluster_upstream_rq_total[5m]))", "legendFormat": "allowed (rq_total)" },
+        { "refId": "B", "expr": "sum(rate(envoy_cluster_upstream_rq_4xx[5m]))", "legendFormat": "denied (4xx)" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops", "custom": { "drawStyle": "line", "fillOpacity": 20 } }, "overrides": [] },
+      "options": { "tooltip": { "mode": "multi" }, "legend": { "displayMode": "table", "placement": "bottom" } }
+    }
+  ]
+}

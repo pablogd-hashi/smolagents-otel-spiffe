@@ -1,0 +1,30 @@
+# Secrets / local config
+.env
+.env.local
+
+# Terraform
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+terraform/terraform.tfstate
+terraform/terraform.tfstate.backup
+terraform/*.tfvars
+!terraform/*.tfvars.example
+
+# Generated Envoy bootstraps (produced by bin/register-services.sh)
+consul/sidecars/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Claude Code
+.claude/
+CLAUDE.md
+.clauderc
+memory/

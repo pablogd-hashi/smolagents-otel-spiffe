@@ -1,0 +1,101 @@
+version: '3'
+
+# Run `task --list` to see the available targets.
+# A `.env` file at the repo root is loaded automatically.
+dotenv: ['.env']
+
+env:
+  COMPOSE_FILE: docker-compose.yml
+
+tasks:
+
+  default:
+    desc: List available tasks
+    cmds: [task --list]
+    silent: true
+
+  setup:
+    desc: Pull images, init Vault PKI, seed Consul intentions, generate sidecar bootstraps
+    cmds:
+      - docker compose pull
+      - docker compose up -d vault consul
+      - bash bin/setup-vault-pki.sh
+      - task: vault:pki
+      - bash bin/register-services.sh
+
+  up:
+    desc: Start the full stack (registers Consul services, starts sidecars)
+    cmds:
+      - cmd: |
+          if [ ! -f .env ]; then
+            echo ""
+            echo "WARNING: .env not found — copy .env.example to .env and set your LLM API key."
+            echo "         The stack will start but agent /run calls will fail without credentials."
+            echo ""
+          fi
+        silent: true
+      - docker compose up -d
+      - bash bin/register-services.sh
+      - docker compose up -d planner-sidecar executor-sidecar
+      - echo "Stack up. Open Grafana at http://localhost:3000 (admin/admin)."
+
+  down:
+    desc: Stop the stack but keep volumes
+    cmds: [docker compose down]
+
+  restart:
+    desc: Restart agents only (faster than full down/up)
+    cmds:
+      - docker compose restart planner executor
+
+  demo:
+    desc: Send 10 varied tasks to the planner; populates every dashboard panel
+    cmds: [bash bin/run-demo.sh]
+
+  traces:
+    desc: Open Jaeger UI
+    cmds: [open http://localhost:16686 || xdg-open http://localhost:16686 || true]
+
+  dashboards:
+    desc: Open Grafana
+    cmds: [open http://localhost:3000 || xdg-open http://localhost:3000 || true]
+
+  logs:agents:
+    desc: Tail planner + executor logs
+    cmds: [docker compose logs -f planner executor]
+
+  logs:otel:
+    desc: Tail OTel Collector logs
+    cmds: [docker compose logs -f otel-collector]
+
+  vault:pki:
+    desc: Apply Vault PKI Terraform
+    dir: terraform
+    cmds:
+      - terraform init -upgrade
+      - terraform apply -auto-approve
+
+  consul:status:
+    desc: Show Consul service catalogue and intentions
+    cmds:
+      - docker compose exec consul consul catalog services
+      - docker compose exec consul consul intention list
+
+  health:
+    desc: Health-check every service
+    cmds:
+      - 'echo "vault:" && curl -fs http://localhost:8200/v1/sys/health?standbyok=true && echo'
+      - 'echo "consul:" && curl -fs http://localhost:8500/v1/status/leader && echo'
+      - 'echo "otel-collector:" && curl -fs http://localhost:13133 && echo'
+      - 'echo "prometheus:" && curl -fs http://localhost:9090/-/healthy && echo'
+      - 'echo "loki:" && curl -fs http://localhost:3100/ready && echo'
+      - 'echo "grafana:" && curl -fs http://localhost:3000/api/health && echo'
+      - 'echo "planner:" && curl -fs http://localhost:8000/health && echo'
+      - 'echo "executor:" && curl -fs http://localhost:8001/health && echo'
+
+  clean:
+    desc: Remove all containers, volumes, terraform state
+    cmds:
+      - docker compose down -v --remove-orphans
+      - rm -rf terraform/.terraform terraform/terraform.tfstate*
+      - rm -rf consul/sidecars
