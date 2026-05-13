@@ -1,0 +1,5 @@
+# Markdownlint configuration for this repo.
+# MD013 (line-length) is disabled — 80 chars is impractical for tables and code blocks in docs.
+# MD060 (table-column-style) is disabled — standard GFM separator rows (|---|) are fine.
+MD013: false
+MD060: false
