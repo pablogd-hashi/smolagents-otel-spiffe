@@ -203,24 +203,6 @@ The `planner.delegate` span (14.76s in this trace) is where the planner is waiti
 
 ---
 
-## Failure modes and limitations
-
-**Model provider degradation.** If the configured LLM provider slows down or rate-limits, `agent_step_duration_seconds` P95 climbs and `llm_call_errors_total` increments. There is no circuit breaker or fallback model; the agent will hit `max_steps` or time out. The dashboard shows this; the system does not self-heal.
-
-**OTel Collector outage.** Both agents export OTLP with `insecure=True` and no retry configuration beyond the SDK defaults. If the Collector is unavailable, spans and metrics are lost; the agents continue to serve requests. Audit logs written to the Python logger still appear in container stdout, so there is a fallback record — just not in Loki.
-
-**No pre-execution tool hooks.** `step_callbacks` fire after a step completes, not before. If an agent step crashes the process (OOM, SIGKILL), the callback does not run and no audit record is emitted for that step. This is a smolagents limitation in 0.1.7; it is not compensated for in this repo.
-
-**Max-steps detection is approximate.** The executor detects "hit max_steps" by inspecting `agent.memory.steps[-1]` after `.run()` returns (`agents/executor/main.py`, `record_max_steps_hit`). smolagents returns a result rather than raising in this case, so there is no clean exception to catch. The detection heuristic is: last step is an `ActionStep` and its step number equals `max_steps`. This can misfire if the agent completes exactly at `max_steps` with a valid final answer.
-
-**Task-scope authorisation is not modelled.** Consul intentions allow `planner-agent → executor-agent` as a blanket rule. There is no per-task or per-user authorisation check. Any caller that can reach the planner's `/run` endpoint can cause it to delegate arbitrary subtasks to the executor.
-
-**Token-cost estimates use a fixed rate.** The "Estimated Cost / Hour" panel in Grafana uses a hardcoded per-1K-tokens rate baked into the dashboard JSON. It does not fetch live pricing from the provider. For real cost tracking, integrate a billing stream or a token-pricing lookup service.
-
-**Consul ACLs are disabled.** `consul/config.hcl` sets `acl { enabled = false }`. In this demo, Connect intentions provide the authorisation layer; ACLs would add another layer of defence in production but are unnecessary for the mesh demo to work.
-
----
-
 ## Running locally vs production
 
 This repo is built to be cloned, started, and discarded. Several things would need to change for a production deployment.
