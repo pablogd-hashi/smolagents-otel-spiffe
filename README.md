@@ -1,5 +1,5 @@
 # smolagents Observability: Consul Connect, Vault PKI, and OpenTelemetry
-This repo is the running version of the design walked through in ![AI Observability: Tracing smolagents with SPIFFE and OTel](https://medium.com/@pablogd/ai-observability-tracing-smolagents-with-spiffe-and-otel-96d463a8c6ae) . A planner and an executor smolagents agent run behind a Consul Connect mesh, with mTLS enforced at the Envoy sidecar layer using SPIFFE identities issued by Vault PKI. Every agent.run() produces an OpenTelemetry trace via OpenInference instrumentation; every step emits structured audit logs to Loki, correlated by trace ID. 
+This repo is the running version of a planner and an executor smolagents agent, behind a Consul Connect mesh, with mTLS enforced at the Envoy sidecar layer using SPIFFE identities issued by Vault PKI. Every agent.run() produces an OpenTelemetry trace via OpenInference instrumentation; every step emits structured audit logs to Loki, correlated by trace ID. 
 A pre-built Grafana dashboard ties traces, metrics, and logs into one view. The whole stack runs locally on Docker Compose with one task up.
 
 ## Architecture
