@@ -94,12 +94,5 @@ For Ollama, start it on the host before `task up`, then set `OLLAMA_BASE_URL=htt
 - [Dashboards](docs/dashboards.md) — how to read each Grafana dashboard row and panel
 - [Traces](docs/traces.md) — Jaeger span structure and filtering tips
 - [Metrics reference](docs/metrics.md) — every metric, label, and PromQL query
-- [Troubleshooting](docs/troubleshooting.md) — common startup and data issues
 
-## Scope
 
-This is a local-first reference implementation. Vault runs in dev mode: in-memory, single-node, pre-unsealed. Consul runs as a single-node server. Grafana allows anonymous Admin access. The patterns — Consul Connect mTLS, Vault as CA, OTel three-signal fanout, tail sampling at the Collector — are production-shaped; the surrounding setup is not. Taking this to production means replacing the dev-mode backing services, binding Vault auth methods to real workload identities, and locking down Grafana. See [Architecture: running locally vs production](docs/architecture.md#running-locally-vs-production) for specifics.
-
-## License
-
-MIT
