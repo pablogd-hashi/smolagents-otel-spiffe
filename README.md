@@ -1,16 +1,10 @@
 # smolagents Observability: Consul Connect, Vault PKI, and OpenTelemetry
 
-> This repo is the running version of **[Observability for AI Workloads: Tracing smolagents End-to-End](INSERT_BLOG_URL)**. The post explains the design; clone this to run it.
-
-A planner/executor smolagents pair runs inside a Consul Connect service mesh. Vault acts as the upstream CA, so every cross-agent call carries a SPIFFE leaf certificate terminated by Envoy sidecars. Every agent operation produces all three OpenTelemetry signals — traces in Jaeger, metrics in Prometheus, structured audit logs in Loki — correlated in pre-built Grafana dashboards. The goal is to make agent behaviour visible end-to-end without modifying agent code beyond wiring in `step_callbacks`.
-
-![Grafana Agent Operations dashboard](images/grafana_otel_ai_agents.png)
 
 ## Architecture
 
 ![System architecture: planner and executor agents behind Envoy sidecars, emitting OTLP to the observability stack](images/architecture_all.png)
 
-An HTTP request arrives at the planner's FastAPI endpoint. The planner calls the executor; its Envoy sidecar — sharing the planner container's network namespace — intercepts that outbound connection and negotiates mTLS using a SPIFFE leaf certificate issued by Consul Connect via Vault's PKI engine. The executor's sidecar handles the server side. Both agents emit OTLP over gRPC to the Collector, which fans out to Jaeger, Prometheus, and Loki. Grafana provisions both backends and both dashboards on startup.
 
 ## What this shows
 
